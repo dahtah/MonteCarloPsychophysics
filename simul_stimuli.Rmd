@@ -322,4 +322,3 @@ Taken from a slide by Aude Oliva (MIT)
 - When controlling for XYZ in your stimulus set, bear in mind the distinction between control in sample and control in expectation.
 - If you want your stimuli to be random but have feature XYZ, there exist many algorithms in the literature but they're hardly plug-and-play
 - It's a fun topic and there's actual research to be done
-

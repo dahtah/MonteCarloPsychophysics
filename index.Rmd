@@ -1,0 +1,9 @@
+# Monte Carlo Methods in Psychophysics
+
+Simon Barthelmé, CNRS, Gipsa-lab
+
+Day 1:
+[Simulating data using models](simulation_models.html)
+Day 2:
+[Monte Carlo methods for stimulus generation](simul_stimuli.html)
+
