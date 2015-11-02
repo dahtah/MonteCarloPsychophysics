@@ -7,3 +7,4 @@ Day 1:
 Day 2:
 [Monte Carlo methods for stimulus generation](simul_stimuli.html)
 
+
