@@ -1,0 +1,341 @@
+---
+title: "Monte Carlo Methods in Psychophysics"
+author: Simon Barthelmé, CNRS, Gipsa-lab (Grenoble)
+date: November 2, 2015
+output: slidy_presentation
+---
+```{r init,echo=FALSE,message=FALSE}
+library(imager)
+library(ggplot2)
+library(dplyr)
+```
+
+# Monte Carlo Methods in Psychophysics
+
+- Monte Carlo Methods: all mathematical methods that use random numbers. 
+- In psychophysics
+  - Used to simulate data from models (day I)
+  - Used to generate stimuli (day II)
+
+# What's a model?
+
+- A model is just a recipe for generating data
+- In neuroscience there's a perception that you have
+  - on the one hand, data analysis methods that everybody uses
+  - on the other, proper "models", that only the mathematically sophisticated use
+- This is a myth. All the data analysis methods are based on models:
+  - A psychometric function is a model (and a threshold is a parameter estimate)
+  - Signal Detection Theory is a model (and d' is a parameter estimate)
+  - Even an ANOVA is a model
+
+# The bad news
+
+- To really understand your data analysis techniques, you need to understand the underlying models
+- You need to be clear on the role of randomness in the model
+
+# The good news
+
+- Implementing simple Monte Carlo methods can really help understand what's going on
+- Statistical methods in psychophysics involve very basic models, which are often building blocks in more sophisticated "proper models". 
+- Today, we learn how to simulate a linear observer model with stimulus uncertainty in 4 lines of code
+
+
+# Why would we want to simulate from a model?
+
+- To understand the model
+- To test your experimental procedures
+- To test your statistical procedures
+- To evaluate the uncertainty in your parameter estimates
+
+# A first concrete example: Signal Detection Theory
+
+In SDT, on a given trial i
+
+- either there's a signal ( $x_i = 1$ ) or there isn't ( $x_i = 0$ )
+- the observer "computes" a noisy decision variable ($z_i$),
+  with a mean that depends on $x_i$.
+- the observer compares $z_i$ to a threshold $\beta$, and if $z_i = \beta$, they say "Yes" ($y_i = 1$) or "No" ($y_i = -1$)
+
+# The same thing in compact notation
+
+ $$ z_i | x_i  \sim N( d' x_i, 1) $$
+ $$ y_i = sign( z_i - \beta ) $$
+
+# How to simulate the behaviour of an observer
+
+```{r}
+run.trial <- function(x,dprime=1,beta=dprime/2)
+    {
+        z <- rnorm(1,mean=x*dprime,sd=1)
+        y <- sign(z-beta)
+        y
+    }
+```
+
+# Line by line (1)
+
+	z <- rnorm(1,mean=x*dprime,sd=1)
+
+generates a random value with a Gaussian distribution, mean x*dprime and standard dev. 1.
+That's the noisy decision variable.
+
+# Line by line (2)
+
+	y <- sign(z-beta)
+
+gives us the sign of z-beta (-1 if z < beta, +1 otherwise).
+That's the observer's response.
+
+# Output
+
+```{r}
+run.trial(1) #Signal trial
+run.trial(0) #Noise trial
+run.trial(0) #Another noise trial
+```
+
+# Repeated trials
+
+```{r}
+replicate(10,run.trial(1)) #Ten signal trials
+replicate(10,run.trial(0)) #Ten noise trials
+```
+
+# Computing statistics
+
+How often does the observer detect the stimulus? (hit rate)
+
+```{r}
+y.sig <- replicate(100,run.trial(1)) 
+mean(y.sig == 1) 
+```
+
+How often does the observer falsely detect a stimulus? (FA rate)
+
+```{r}
+y.noi <- replicate(100,run.trial(0)) 
+mean(y.noi == 1)
+```
+
+# Monte Carlo error
+
+The quantities we are computing aren't deterministic:
+
+```{r}
+y.noi <- replicate(100,run.trial(0)) 
+mean(y.noi == 1)
+
+y.noi <- replicate(100,run.trial(0)) 
+mean(y.noi == 1)
+```
+
+so if we're trying to estimate the theoretical FA rate from a finite sample we incur *Monte Carlo error*.
+
+# Monte Carlo error vs. estimation error
+
+The Monte Carlo error is the same as the estimation error we incur when inferring parameters from true data *if we assume data come exactly from our model*.
+
+# Estimating estimation error
+
+For example, here's the theoretical estimation error we'd get for estimating FA rate for our observer from 20 trials:
+
+```{r}
+est.fa <- function()
+    {
+        y.noi <- replicate(20,run.trial(0)) 
+        mean(y.noi==1)
+    }
+fas <- replicate(1000,est.fa())
+hist(fas,xlab="Estimated FA rate",main="")
+```
+
+# Estimating estimation error for d'
+
+d' is how the model quantifies discriminability.
+It's usually estimated via the well-known formula:
+
+```{r}
+dprime <- function(fa,hr)
+    {
+        qnorm(hr)-qnorm(fa)
+    }
+```
+
+# Variability in estimated d'
+
+```{r}
+est.dprime <- function() {
+y.noi <- replicate(20,run.trial(0))
+y.sig <- replicate(20,run.trial(1))
+dprime(mean(y.noi==1),mean(y.sig==1))
+}
+
+dps <- replicate(1000,est.dprime())
+hist(dps,main="",xlab="Estimated d'")
+```
+
+
+# FA rate as a function of threshold
+
+Now we can take our model observer and vary some parameters to see what happens:
+
+```{r}
+fa.beta <- function(beta) {
+y.noi <- replicate(100,run.trial(0,beta=beta)) 
+mean(y.noi==1)
+}
+
+fa.beta(1)
+fa.beta(-.1)
+```
+
+# FA rate as a function of threshold
+
+```{r}
+betas <- seq(-5,5,l=30)
+dat <- ldply(betas,function(b) data.frame(FA=fa.beta(b),beta=b))
+p <- ggplot(dat,aes(beta,FA))+geom_point()+labs(x=expression(beta),y="False Alarm rate")
+print(p)
+```
+
+# FA rate and H rate as a function of threshold
+
+```{r}
+fahr <- function(beta) {
+y.noi <- replicate(100,run.trial(0,beta=beta))
+y.sig <- replicate(100,run.trial(1,beta=beta))
+data.frame(FA=mean(y.noi==1),H=mean(y.sig==1),beta=beta)
+}
+dat <- ldply(betas,fahr)
+p <- ggplot(dat,aes(beta,FA))+geom_point()+labs(x=expression(beta),y="rate")+geom_point(aes(y=H),col="red")
+print(p)
+```
+
+# FA as a function of H
+
+```{r}
+ggplot(dat,aes(FA,H))+geom_point()
+```
+
+# A more sophisticated model
+
+Let's go a step further in our modelling and assume that:
+- the observer is engaging in a blob detection task
+- the observer is linear
+
+I'm going to use the "imager" package for image processing
+
+# The task
+
+The target is a blob:
+
+```{r fig.width=6,fig.height=6}
+library(imager)
+blob <- as.cimg(function(x,y) dnorm(x,m=50,sd=15)*dnorm(y,m=50,sd=15),100,100)
+plot(blob)
+```
+
+# The model, in words
+
+The observer tries to match the actual stimulus to its internal representation of the target. In addition, there is some noise. Then the observer compares the result to a threshold and answers accordingly. 
+Also, everything is linear and the noise is Gaussian.
+
+# The model, in equations
+
+The observer is linear, ie. the internal decision variable is:
+$$ z_i = \int w(s)x(s) ds + \epsilon $$
+where $s$ indexes space, $x(s)$  is the stimulus and $\epsilon$ is a noise term. 
+$w(s)$ is a spatial weighting term and represents the observer's  internal representation of the target (the *template*)
+
+# Example
+
+```{r fig.width=12,fig.height=6}
+template <- as.cimg(function(x,y) dnorm(x,m=40,sd=12)*dnorm(y,m=50,sd=16),100,100)
+layout(t(1:2))
+plot(blob,main="Target");plot(template,main="Template")
+```
+
+# Simulating responses
+
+Here's a full implementation of the model
+
+```{r}
+blob <- blob/sqrt(sum(blob^2)) #Normalise to unit energy
+template <- template/sqrt(sum(template^2))
+do.trial <- function(x,template,beta)
+    {
+        z <- sum(x*template) - beta +rnorm(1)
+        sign(z)
+    }
+```
+
+# FA and H rates
+
+```{r}
+y.sig <- replicate(100,do.trial(blob,template,.1))
+mean(y.sig == 1)
+y.noi <- replicate(100,do.trial(0*blob,template,.1))
+mean(y.noi == 1)
+```
+
+# Adding stimulus uncertainty
+
+Classical detection models often assume stimulus uncertainty (the observer isn't always sure where the target is going to appear). It's now easy to add that feature to our model by assuming that the template undergoes random shifts.
+
+# Random shifts
+
+```{r fig.width=6,fig.height=6}
+imshift(template,10,-5) %>% plot #Shift by 10 pixels in x, -5 in y
+```
+
+# Adding stimulus uncertainty
+
+```{r}
+do.trial <- function(x,template,beta,shift.sd)
+    {
+        shift <- rnorm(2,sd=shift.sd)
+        template <- imshift(template,shift[1],shift[2])
+        z <- sum(x*template) - beta +rnorm(1)
+        sign(z)
+    }
+```
+
+# And finally
+
+```{r}
+
+dprime.shift <- function(shift.sd,n=200) {
+y.noi <- replicate(n,do.trial(0,template,.1,shift.sd=shift.sd))
+y.sig <- replicate(n,do.trial(blob,template,.1,shift.sd=shift.sd))
+c(dp=dprime(mean(y.noi==1),mean(y.sig==1)),shift.sd=shift.sd)
+}
+shifts <- seq(0,50,l=30)
+dat <- ldply(shifts,dprime.shift)
+p <- ggplot(dat,aes(shift.sd,dp))+geom_point()+labs(x="Std. dev. of random shift",y="d'")
+print(p)
+```
+
+# Conclusion
+
+- Given the right tools, simulating data using observer models is easy
+- Just write a computer program and insert random variables where needed
+- I suggest using R, Python is also very good, Matlab not so much
+- General strategy: start small (here SDT), and add components one-by-one
+- It really really helps build statistical understanding
+
+# Caveats
+
+- Simulation good, analytical understanding better:
+  - Few things are more annoying than modelling papers that describe computer programs using horrible notation
+  - Analytical results are often more general
+  - Ideally, have both
+	
+# Going further
+
+- Good topics to know about:
+  - Methods for generating random variables
+  - Parametric bootstrap
+  - Approximate Bayesian Computation
+- Monte Carlo methods:
+   D.P. Kroese, T. Taimre, Z.I. Botev (2011). Handbook of Monte Carlo Methods, Wiley Series in Probability and Statistics, John Wiley and Sons, New York. 
+
